@@ -28,25 +28,25 @@ class StateTest extends munit.FunSuite {
   test("userService") {
     case class User(name: String)
     trait UserService[Cap[_]] {
-      def addUser(name: String): Unit in Cap
-      def getUser(name: String): Option[User] in Cap
+      def addUser(name: String): Unit require Cap
+      def getUser(name: String): Option[User] require Cap
     }
 
     type Storage[A] = StateM[List[User], A]
     case class StateUserService() extends UserService[Storage] {
 
-      override def addUser(name: String): Unit in Storage = {
+      override def addUser(name: String): Unit require Storage = {
         println("Adding user: " + name)
         val newUser = User(name)
         State[List[User]].update(newUser :: _)
       }
         
-      override def getUser(name: String): Option[User] in Storage =
+      override def getUser(name: String): Option[User] require Storage =
         println("Getting user: " + name)
         State[List[User]].get().find(_.name == name)
     }
 
-    def program[F[_]](userService: UserService[F]): Option[User] in F = {
+    def program[F[_]](userService: UserService[F]): Option[User] require F = {
       userService.addUser("John")
       userService.addUser("Jane")
       userService.getUser("John")
