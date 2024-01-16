@@ -1,4 +1,4 @@
-package com.virtuslab.lynx
+package lynx
 
 import jdk.internal.vm.{ ContinuationScope, Continuation }
 
@@ -19,7 +19,8 @@ class Coroutine[S, R, T](prog: Prompt[S, R] => T) {
   def resume(v: R): Unit = { check(!isDone); send(v); co.run() }
 
   private var channel: Any = null
-  private def send(v: Any) = channel = v
+  private def send(v: Any) = 
+    channel = v
   private def receive[A](): A = {
     val v = channel
     v.asInstanceOf[A]

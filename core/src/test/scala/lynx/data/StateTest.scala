@@ -1,6 +1,6 @@
-package com.virtuslab.lynx.data
+package lynx.data
 
-import com.virtuslab.lynx.*
+import lynx.*
 
 class StateTest extends munit.FunSuite {
 
@@ -9,13 +9,16 @@ class StateTest extends munit.FunSuite {
       State[Int].reflect { (s: Int) => (s + 1, s) }
     }
 
+    var x: Any = 0
+
     def program(): State[Int, (Int, Int, Int)] = {
       val s1 = nextInt()
       val s2 = nextInt()
       val s3 = nextInt()
+      x = s1
       (s1, s2, s3)
     }
-
+  
     val (s, (i1, i2, i3)) = State[Int].reify(program())(0)
     assertEquals(s, 3)
     assertEquals(i1, 0)

@@ -1,4 +1,4 @@
-package com.virtuslab.lynx
+package lynx
 
 import scala.annotation.implicitNotFound
 

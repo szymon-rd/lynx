@@ -1,4 +1,6 @@
-package com.virtuslab.lynx
+package lynx
+
+import language.experimental.captureChecking
 
 trait Monadic[M[_]] {
 
@@ -25,11 +27,13 @@ trait Monadic[M[_]] {
    */
   def reflect[R](mr: M[R])(using r: CanReflect[M]): R = r.reflect(mr)
 
+
+  val sync = false
   /**
    * Reify a computation into a monadic value
    */
-  def reify[R](prog: CanReflect[M] ?=> R): M[R] = {
-
+  def reify[R](prog: CanReflect[M]^ ?-> R): M[R] = {
+  
     type X
 
     // The coroutine keeps sending monadic values until it completes
@@ -45,6 +49,8 @@ trait Monadic[M[_]] {
       pure(prog(using reflect))
     })
 
+    println("Yielded at "  + System.currentTimeMillis().toString().takeRight(5))
+
     def step(x: X): Either[M[X], M[R]] = {
       coroutine.resume(x)
       if (coroutine.isDone)
@@ -58,7 +64,9 @@ trait Monadic[M[_]] {
         coroutine.result
       else
         // (M[X] => Either[M[X], M[R]]) => M[R]
-        sequence(coroutine.value)(step)
+        val value = coroutine.value
+        println("Current value: " + value)
+        sequence(value)(step)
 
     run()
   }
