@@ -26,7 +26,7 @@ class Coroutine[S, R, T](prog: Prompt[S, R] => T) {
     v.asInstanceOf[A]
   }
 
-  private object prompt extends ContinuationScope("cats-reflect") with Prompt[S, R] {
+  private object prompt extends ContinuationScope("reflect") with Prompt[S, R] {
     def suspend(value: S): R = {
       send(value)
       Continuation `yield` this

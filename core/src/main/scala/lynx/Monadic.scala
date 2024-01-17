@@ -2,7 +2,8 @@ package lynx
 
 import language.experimental.captureChecking
 
-trait Monadic[M[_]] {
+trait Monadic[M[+_]] {
+  type UniversalM = M[Any]
 
   /**
    * Embedding of pure values into the monad M
@@ -25,14 +26,14 @@ trait Monadic[M[_]] {
   /**
    * Helper to summon and use an instance of CanReflect[M]
    */
-  def reflect[R](mr: M[R])(using r: CanReflect[M]): R = r.reflect(mr)
+  def reflect[R](mr: M[R])(using r: CanReflect[UniversalM]): R = r.reflect(mr)
 
 
   val sync = false
   /**
    * Reify a computation into a monadic value
    */
-  def reify[R](prog: CanReflect[M]^ ?-> R): M[R] = {
+  def reify[R](prog: CanReflect[UniversalM]^ ?-> R): M[R] = {
   
     type X
 
@@ -40,8 +41,8 @@ trait Monadic[M[_]] {
     // with a monadic value
     val coroutine = new Coroutine[M[X], X, M[R]](prompt => {
       // capability to reflect M
-      object reflect extends CanReflect[M] {
-        def reflect[R](mr: M[R]) : R =
+      object reflect extends CanReflect[UniversalM] {
+        def reflect[N[_] <: UniversalM, R](mr: N[R]) : R =
           // since we know the receiver of this suspend is the
           // call to flatMap, the casts are safe
           prompt.suspend(mr.asInstanceOf[M[X]]).asInstanceOf[R]

@@ -4,7 +4,7 @@ import scala.annotation.tailrec
 import lynx.*
 
 type OptionalM[A] = Option[A]
-type Optional[A] = CanReflect[OptionalM] ?=> A
+type Optional[A] = CanReflect[OptionalM[Any]] ?=> A
 
 class OptionalMonadic extends Monadic[OptionalM] {
 

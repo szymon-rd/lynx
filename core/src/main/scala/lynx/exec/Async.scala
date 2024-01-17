@@ -3,7 +3,7 @@ package lynx.exec
 import lynx.*
 
 type AsyncM[A] = () => A
-type Async[A] = CanReflect[AsyncM] ?=> A
+type Async[A] = CanReflect[AsyncM[Any]] ?=> A
 
 
 class AsyncMonadic extends Monadic[AsyncM] {

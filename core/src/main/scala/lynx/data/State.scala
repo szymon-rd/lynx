@@ -3,10 +3,10 @@ package lynx.data
 import lynx.*
 import scala.annotation.tailrec
 
-type StateM[S, A] = (S) => (S, A)
+type StateM[S, +A] = (S) => (S, A)
 type StatesM[S] = [A] =>> StateM[S, A]
 
-type State[S, A] = CanReflect[StatesM[S]] ?=> A
+type State[S, A] = CanReflect[StateM[S, Any]] ?=> A
 type States[S] = [A] =>> State[S, A]
 
 class StateMonadic[S] extends Monadic[StatesM[S]] {

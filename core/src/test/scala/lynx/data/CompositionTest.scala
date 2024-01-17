@@ -24,7 +24,7 @@ class CompositionTest extends munit.FunSuite {
   }
 
   test("userService") {
-    def program[F[_]](userService: UserService[F]): Optional[Int] requires F = {
+    def program[F[_]](userService: UserService[F]): Int requiresN (CapFor[F], CapFor[Option]) = {
       userService.addUser("John")
       userService.addUser("Jane")
       val user = userService.getUser("John")
