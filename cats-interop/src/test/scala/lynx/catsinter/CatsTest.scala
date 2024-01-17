@@ -9,6 +9,8 @@ import java.nio.file.Paths
 import java.nio.file.Path
 import java.nio.file.NoSuchFileException
 import java.rmi.ServerError
+import cats.data.*
+import cats.syntax.parallel.*
 
 class CatsTest extends CatsEffectSuite {
 
@@ -33,29 +35,29 @@ class CatsTest extends CatsEffectSuite {
   case object ServerError extends HttpError
   case object ClientError extends HttpError
 
-  class Routes(handers: Map[String, Request => LIO[LEither[HttpError, Response]]]) {
-    def run(req: Request): LIO[LEither[HttpError, Response]] = {
-      handers.get(req.path) match {
-        case Some(handler) => handler(req)
-        case None => IO.delayR(Response(404, "Not found"))
+  test("Async server - Direct") {
+
+    class Routes(handers: Map[String, Request => LIO[LEither[HttpError, Response]]]) {
+      def run(req: Request): LIO[LEither[HttpError, Response]] = {
+        handers.get(req.path) match {
+          case Some(handler) => handler(req)
+          case None => IO.delayR(Response(404, "Not found"))
+        }
+      }
+      def handleGet(path: String)(handler: Request => LIO[LEither[HttpError, Response]]): Routes = {
+        new Routes(handers + (path -> handler))
       }
     }
-    def handleGet(path: String)(handler: Request => LIO[LEither[HttpError, Response]]): Routes = {
-      new Routes(handers + (path -> handler))
+    object Routes {
+      def apply(handers: (String, Request => LIO[LEither[HttpError, Response]])*): Routes = new Routes(handers.toMap)
     }
-  }
-  object Routes {
-    def apply(handers: (String, Request => LIO[LEither[HttpError, Response]])*): Routes = new Routes(handers.toMap)
-  }
-
-
-  test("Async server") {
 
     def makeRequest(url: String): LIO[LEither[HttpError, Response]] = IO.delayR(Response(200, "Hello from " + url))
 
+
     val routes = Routes()
       .handleGet("/hello") { req =>
-        IO.delayR(Response(200, "Hello"))
+        Response(200, "Hello")
       }
       .handleGet("/proxy") { req =>
         val address = req.body
@@ -70,6 +72,7 @@ class CatsTest extends CatsEffectSuite {
       }
 
 
+
       def reify[A](program: LIO[LEither[HttpError, A]]): IO[Either[HttpError, A]] = {
         type EitherHttp[A] = Either[HttpError, A]
         Lynx[IO].reify(Lynx[EitherHttp].reify(program))
@@ -79,6 +82,62 @@ class CatsTest extends CatsEffectSuite {
         .assertEquals(Right(Response(200, """{"status": 200, "response": "Hello from http://google.com}"""")))
       reify(routes.run(Request("/proxyBatch", "http://google.com\nhttp://yandex.ru")))
         .assertEquals(Right(Response(200, """{"responses": [{"status": 200, "response": "Hello from http://google.com"},{"status": 200, "response": "Hello from http://yandex.ru"}]}""")))
+  }
+
+  test("Async server - Cats") {
+    class Routes(handers: Map[String, Request => IO[Either[HttpError, Response]]]) {
+      def run(req: Request): IO[Either[HttpError, Response]] = {
+        handers.get(req.path) match {
+          case Some(handler) => handler(req)
+          case None => IO.delay(Right(Response(404, "Not found")))
+        }
+      }
+      def handleGet(path: String)(handler: Request => IO[Either[HttpError, Response]]): Routes = {
+        new Routes(handers + (path -> handler))
+      }
+    }
+    object Routes {
+      def apply(handers: (String, Request => IO[Either[HttpError, Response]])*): Routes = new Routes(handers.toMap)
+    }
+
+    def makeRequest(url: String): IO[Either[HttpError, Response]] = IO.delay(Right(Response(200, "Hello from " + url)))
+
+    def validateResponse(response: Response): IO[Either[HttpError, Response]] = {
+      if (response.status == 200) {
+        IO.delay(Right(response))
+      } else {
+        IO.delay(Left(ServerError))
+      }
+    }
+
+    val routes = Routes()
+      .handleGet("/hello") { req =>
+        IO.delay(Right(Response(200, "Hello")))
+      }
+      .handleGet("/proxy") { req =>
+        val address = req.body
+        val logic = for {
+          response <- EitherT(makeRequest(address))
+          _ <- EitherT.rightT(println("Got response with status " + response.status))
+        } yield Response(200, response.toJson)
+        logic.value
+      }
+      .handleGet("/proxyBatch") { req =>
+        val addresses = req.body.split("\n").toList
+        val logic = for {
+          responses <- addresses.map(makeRequest).parTraverse(EitherT(_))
+        } yield Response(200, s"""{"responses": [${responses.map(_.toJson).mkString(",")}]}""")
+        logic.value
+      }
+
+
+    routes.run(Request("/hello", "")).assertEquals(Right(Response(200, "Hello")))
+    routes.run(Request("/proxy", "http://google.com"))
+      .assertEquals(Right(Response(200, """{"status": 200, "response": "Hello from http://google.com}""")))
+    routes.run(Request("/proxyBatch", "http://google.com\nhttp://yandex.ru"))
+      .assertEquals(Right(Response(200, """{"responses": [{"status": 200, "response": "Hello from http://google.com"},{"status": 200, "response": "Hello from http://yandex.ru"}]}""")))
+    
+    
   }
 
 
