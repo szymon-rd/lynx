@@ -25,3 +25,5 @@ type CatsResource[M[_], R] = CanReflect[Resource[M, Any]] ?=> R
 
 extension [M[+_] : Monad, R](resource: Resource[M, R]^)
   def useR(using M: MonadCancel[M, Throwable]): (R requires M)^{resource} = resource.use[R](a => M.pure(a))(M).reflect
+
+type LIO[A] = A requires IO

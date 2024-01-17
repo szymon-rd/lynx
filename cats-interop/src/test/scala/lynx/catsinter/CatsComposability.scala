@@ -40,7 +40,7 @@ class CatsComposabilityTest extends CatsEffectSuite {
   test("Lynx requiresN") {
 
     def load(id: Int): Int requiresN (CapFor[DbEither], CapFor[IO]) = 
-      IO.delayR(DbLib.dbLoad(id)).r
+      IO.delayR(DbLib.dbLoad(id)).?
     
     def program: (Int, Int, Int) requiresN (CapFor[DbEither], CapFor[IO]) = // or DbEither[(Int, Int, Int)] requires IO
       val i1 = load(1)

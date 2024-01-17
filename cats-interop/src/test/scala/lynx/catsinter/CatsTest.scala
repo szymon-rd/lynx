@@ -6,16 +6,15 @@ import lynx.*
 import munit.CatsEffectSuite
 import java.nio.file.Files
 import java.nio.file.Paths
-import language.experimental.captureChecking
 import java.nio.file.Path
 import java.nio.file.NoSuchFileException
 
 class CatsTest extends CatsEffectSuite {
 
   test("reflect IO") {
-    def ioa: Int requires IO = IO.delayR(5)
+    def ioa: LIO[Int] = IO.delayR(5)
 
-    def program: Int requires IO = {
+    def program: LIO[Int] = {
       ioa + ioa
     }
 
@@ -23,6 +22,57 @@ class CatsTest extends CatsEffectSuite {
 
     result.assertEquals(10)
   }
+
+  case class Request(path: String, body: String) 
+  case class Response(status: Int, body: String) {
+    def toJson: String = s"""{"status": ${status}, "response": "${body}"}"""
+  }
+
+
+  class Routes(handers: Map[String, Request => LIO[Response]]) {
+    def run(req: Request): LIO[Response] = {
+      handers.get(req.path) match {
+        case Some(handler) => handler(req)
+        case None => IO.delayR(Response(404, "Not found"))
+      }
+    }
+    def handleGet(path: String)(handler: Request => LIO[Response]): Routes = {
+      new Routes(handers + (path -> handler))
+    }
+  }
+  object Routes {
+    def apply(handers: (String, Request => LIO[Response])*): Routes = new Routes(handers.toMap)
+  }
+
+
+  test("Async server") {
+
+    def makeRequest(url: String): LIO[Response] = IO.delayR(Response(200, "Hello from " + url))
+
+    val routes = Routes()
+      .handleGet("/hello") { req =>
+        IO.delayR(Response(200, "Hello"))
+      }
+      .handleGet("/proxy") { req =>
+        val address = req.body
+        val response = makeRequest(address)
+        println("Got response with status " + response.status)
+        Response(200, response.toJson)
+      }
+      .handleGet("/proxyBatch") { req =>
+        val addresses = req.body.split("\n")
+        val responses = addresses.map(makeRequest)
+        Response(200, s"""{"responses": [${responses.map(_.toJson).mkString(",")}]}""")
+      }
+
+      Lynx[IO].reify(routes.run(Request("/hello", ""))).assertEquals(Response(200, "Hello"))
+      Lynx[IO].reify(routes.run(Request("/proxy", "http://google.com")))
+        .assertEquals(Response(200, """{"status": 200, "response": "Hello from http://google.com}""""))
+      Lynx[IO].reify(routes.run(Request("/proxyBatch", "http://google.com\nhttp://yandex.ru")))
+        .assertEquals(Response(200, """{"responses": [{"status": 200, "response": "Hello from http://google.com"},{"status": 200, "response": "Hello from http://yandex.ru"}]}"""))
+  }
+
+
 
   // from monadic-reflection library
   test("Rate limiting") {
@@ -45,25 +95,26 @@ class CatsTest extends CatsEffectSuite {
           } yield result
 
       // example translated to direct style
-      def rateLimitedDirectStyle[A, B](semaphore : Semaphore[IO], function : A -> B requires IO): (A -> B requires IO) = input => {
-        semaphore.acquire.r
-        val timerFiber = IO.sleep(1.second).start.r
+      def rateLimitedDirectStyle[A, B](semaphore : Semaphore[IO], function : A => LIO[B]): (A => LIO[B]) = input => {
+        semaphore.acquire.?
+        val timerFiber = IO.sleep(1.second).start.?
         val result = function(input)
-        timerFiber.join.r
-        semaphore.release.r
+        timerFiber.join.?
+        semaphore.release.?
         result
       }
 
       // "big" dataset
       val myData : List[Int] = (1 to 30).toList
 
-      def process: List[String] requires IO = {
+      def process: LIO[List[String]] = {
         println("Starting to process!")
-        val sem = Semaphore[IO](10).r
+        val sem = Semaphore[IO](10).?
         val limited = rateLimitedDirectStyle(sem, n => { println(s"hey! ${n}"); n.toString })
         // here we need to locally reify, since parTraverse has type:
         //   def parTraverse[A](as: List[A])(f: A => IO[B]): IO[List[B]]
-        myData.parTraverse(n => Lynx[IO].reify { limited(n) }).r
+        // todo: get rid of par traverse
+        myData.parTraverse(n => Lynx[IO].reify { limited(n) }).?
       }
     }
     val result = Lynx[IO].reify(RateLimiter.process)
