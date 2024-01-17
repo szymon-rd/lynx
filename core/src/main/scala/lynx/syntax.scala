@@ -14,6 +14,7 @@ infix type requiresN[A, xs] = xs match {
 extension [M[+_], R](mr: M[R])
   inline def reflect(using r: CanReflect[M[Any]]): R = r.reflect(mr)
   inline def r(using r: CanReflect[M[Any]]): R = r.reflect(mr)
+  inline def ?(using r: CanReflect[M[Any]]): R = r.reflect(mr)
 
 
 inline def Lynx[M[+_]: Monadic]: LynxSyntax[M] = LynxSyntax()

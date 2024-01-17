@@ -27,3 +27,8 @@ extension [M[+_] : Monad, R](resource: Resource[M, R]^)
   def useR(using M: MonadCancel[M, Throwable]): (R requires M)^{resource} = resource.use[R](a => M.pure(a))(M).reflect
 
 type LIO[A] = A requires IO
+type LEither[L, +R] = R requires ([A] =>> Either[L, A])
+object LEither {
+  def left[L, R](l: L): LEither[L, R] = Lynx[[A] =>> Either[L, A]].reflect(Left(l))
+  def right[L, R](r: R): LEither[L, R] = Lynx[[A] =>> Either[L, A]].reflect(Right(r))
+}

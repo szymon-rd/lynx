@@ -8,6 +8,7 @@ import java.nio.file.Files
 import java.nio.file.Paths
 import java.nio.file.Path
 import java.nio.file.NoSuchFileException
+import java.rmi.ServerError
 
 class CatsTest extends CatsEffectSuite {
 
@@ -28,26 +29,29 @@ class CatsTest extends CatsEffectSuite {
     def toJson: String = s"""{"status": ${status}, "response": "${body}"}"""
   }
 
+  trait HttpError
+  case object ServerError extends HttpError
+  case object ClientError extends HttpError
 
-  class Routes(handers: Map[String, Request => LIO[Response]]) {
-    def run(req: Request): LIO[Response] = {
+  class Routes(handers: Map[String, Request => LIO[LEither[HttpError, Response]]]) {
+    def run(req: Request): LIO[LEither[HttpError, Response]] = {
       handers.get(req.path) match {
         case Some(handler) => handler(req)
         case None => IO.delayR(Response(404, "Not found"))
       }
     }
-    def handleGet(path: String)(handler: Request => LIO[Response]): Routes = {
+    def handleGet(path: String)(handler: Request => LIO[LEither[HttpError, Response]]): Routes = {
       new Routes(handers + (path -> handler))
     }
   }
   object Routes {
-    def apply(handers: (String, Request => LIO[Response])*): Routes = new Routes(handers.toMap)
+    def apply(handers: (String, Request => LIO[LEither[HttpError, Response]])*): Routes = new Routes(handers.toMap)
   }
 
 
   test("Async server") {
 
-    def makeRequest(url: String): LIO[Response] = IO.delayR(Response(200, "Hello from " + url))
+    def makeRequest(url: String): LIO[LEither[HttpError, Response]] = IO.delayR(Response(200, "Hello from " + url))
 
     val routes = Routes()
       .handleGet("/hello") { req =>
@@ -65,11 +69,16 @@ class CatsTest extends CatsEffectSuite {
         Response(200, s"""{"responses": [${responses.map(_.toJson).mkString(",")}]}""")
       }
 
-      Lynx[IO].reify(routes.run(Request("/hello", ""))).assertEquals(Response(200, "Hello"))
-      Lynx[IO].reify(routes.run(Request("/proxy", "http://google.com")))
-        .assertEquals(Response(200, """{"status": 200, "response": "Hello from http://google.com}""""))
-      Lynx[IO].reify(routes.run(Request("/proxyBatch", "http://google.com\nhttp://yandex.ru")))
-        .assertEquals(Response(200, """{"responses": [{"status": 200, "response": "Hello from http://google.com"},{"status": 200, "response": "Hello from http://yandex.ru"}]}"""))
+
+      def reify[A](program: LIO[LEither[HttpError, A]]): IO[Either[HttpError, A]] = {
+        type EitherHttp[A] = Either[HttpError, A]
+        Lynx[IO].reify(Lynx[EitherHttp].reify(program))
+      }
+      reify(routes.run(Request("/hello", ""))).assertEquals(Right(Response(200, "Hello")))
+      reify(routes.run(Request("/proxy", "http://google.com")))
+        .assertEquals(Right(Response(200, """{"status": 200, "response": "Hello from http://google.com}"""")))
+      reify(routes.run(Request("/proxyBatch", "http://google.com\nhttp://yandex.ru")))
+        .assertEquals(Right(Response(200, """{"responses": [{"status": 200, "response": "Hello from http://google.com"},{"status": 200, "response": "Hello from http://yandex.ru"}]}""")))
   }
 
 
